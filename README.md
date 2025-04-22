@@ -1,36 +1,209 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bookmark Manager
+
+A simple bookmark manager built with Next.js, Supabase, and shadcn/ui.
+
+## Features
+
+- Store and organize bookmarks
+- Share bookmarks with others
+- Import bookmarks from browser
+- Tags and search functionality
+- Reading list mode
+- Preview bookmarked websites
+
+## Tech Stack
+
+- Next.js 14
+- TypeScript
+- Supabase (Authentication & Database)
+- shadcn/ui
+- Tailwind CSS
+- Vercel (Deployment)
 
 ## Getting Started
 
-First, run the development server:
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   yarn install
+   ```
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+3. Create a Supabase project and get your project URL and anon key
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Create a `.env.local` file with your Supabase credentials:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=your-project-url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+5. Create the following tables in your Supabase database:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   ```sql
+   -- bookmarks table
+   create table bookmarks (
+     id uuid default uuid_generate_v4() primary key,
+     user_id uuid references auth.users not null,
+     url text not null,
+     title text not null,
+     description text,
+     is_public boolean default false,
+     shared_by uuid references auth.users,
+     shared_with text,
+     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+   );
 
-## Learn More
+   -- Enable RLS
+   alter table bookmarks enable row level security;
 
-To learn more about Next.js, take a look at the following resources:
+   -- Create policies
+   create policy "Users can view their own bookmarks"
+     on bookmarks for select
+     using (auth.uid() = user_id);
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   create policy "Users can view shared bookmarks"
+     on bookmarks for select
+     using (is_public = true or shared_with = auth.email());
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   create policy "Users can insert their own bookmarks"
+     on bookmarks for insert
+     with check (auth.uid() = user_id);
 
-## Deploy on Vercel
+   create policy "Users can update their own bookmarks"
+     on bookmarks for update
+     using (auth.uid() = user_id);
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   create policy "Users can delete their own bookmarks"
+     on bookmarks for delete
+     using (auth.uid() = user_id);
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+   -- tags table
+   create table tags (
+     id uuid default uuid_generate_v4() primary key,
+     user_id uuid references auth.users not null,
+     name text not null,
+     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+     unique(user_id, name)
+   );
+
+   -- Enable RLS
+   alter table tags enable row level security;
+
+   -- Create policies
+   create policy "Users can view their own tags"
+     on tags for select
+     using (auth.uid() = user_id);
+
+   create policy "Users can insert their own tags"
+     on tags for insert
+     with check (auth.uid() = user_id);
+
+   create policy "Users can update their own tags"
+     on tags for update
+     using (auth.uid() = user_id);
+
+   create policy "Users can delete their own tags"
+     on tags for delete
+     using (auth.uid() = user_id);
+
+   -- bookmark_tags table for many-to-many relationship
+   create table bookmark_tags (
+     bookmark_id uuid references bookmarks on delete cascade not null,
+     tag_id uuid references tags on delete cascade not null,
+     primary key (bookmark_id, tag_id)
+   );
+
+   -- Enable RLS
+   alter table bookmark_tags enable row level security;
+
+   -- Create policies
+   create policy "Users can view their own bookmark tags"
+     on bookmark_tags for select
+     using (
+       exists (
+         select 1 from bookmarks
+         where id = bookmark_id
+         and user_id = auth.uid()
+       )
+     );
+
+   create policy "Users can insert their own bookmark tags"
+     on bookmark_tags for insert
+     with check (
+       exists (
+         select 1 from bookmarks
+         where id = bookmark_id
+         and user_id = auth.uid()
+       )
+     );
+
+   create policy "Users can delete their own bookmark tags"
+     on bookmark_tags for delete
+     using (
+       exists (
+         select 1 from bookmarks
+         where id = bookmark_id
+         and user_id = auth.uid()
+       )
+     );
+
+   -- profiles table
+   create table profiles (
+     id uuid default uuid_generate_v4() primary key,
+     user_id uuid references auth.users not null unique,
+     full_name text,
+     avatar_url text,
+     created_at timestamp with time zone default timezone('utc'::text, now()) not null
+   );
+
+   -- Enable RLS
+   alter table profiles enable row level security;
+
+   -- Create policies
+   create policy "Users can view their own profile"
+     on profiles for select
+     using (auth.uid() = user_id);
+
+   create policy "Users can update their own profile"
+     on profiles for update
+     using (auth.uid() = user_id);
+
+   -- Create a trigger to create a profile when a new user signs up
+   create function public.handle_new_user()
+   returns trigger as $$
+   begin
+     insert into public.profiles (user_id, full_name, avatar_url)
+     values (new.id, new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'avatar_url');
+     return new;
+   end;
+   $$ language plpgsql security definer;
+
+   create trigger on_auth_user_created
+     after insert on auth.users
+     for each row execute procedure public.handle_new_user();
+
+   -- Create indexes for better performance
+   create index bookmarks_user_id_idx on bookmarks(user_id);
+   create index bookmarks_shared_with_idx on bookmarks(shared_with);
+   create index bookmarks_created_at_idx on bookmarks(created_at desc);
+   create index tags_user_id_idx on tags(user_id);
+   create index tags_name_idx on tags(name);
+   create index bookmark_tags_bookmark_id_idx on bookmark_tags(bookmark_id);
+   create index bookmark_tags_tag_id_idx on bookmark_tags(tag_id);
+   create index profiles_user_id_idx on profiles(user_id);
+   ```
+
+6. Run the development server:
+   ```bash
+   yarn dev
+   ```
+
+7. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+## Deployment
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme).
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
