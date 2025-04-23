@@ -1,28 +1,50 @@
 "use client"
 
-import { useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { useState, useEffect } from 'react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Pencil } from 'lucide-react'
-import { Bookmark } from '@/types/database'
-import { useToast } from '@/components/ui/use-toast'
-import { useBookmarks } from '@/context/BookmarkContext'
+import { Textarea } from '@/components/ui/textarea'
+import type { Bookmark } from '@/types/database'
+import { useRouter } from 'next/navigation'
+import { Badge } from '@/components/ui/badge'
+import { X } from 'lucide-react'
 
 interface EditBookmarkDialogProps {
   bookmark: Bookmark & { tags: string[] }
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSuccess?: () => void
 }
 
-export function EditBookmarkDialog({ bookmark }: EditBookmarkDialogProps) {
-  const [open, setOpen] = useState(false)
-  const [url, setUrl] = useState(bookmark.url)
+export function EditBookmarkDialog({ bookmark, open, onOpenChange, onSuccess }: EditBookmarkDialogProps) {
+  const router = useRouter()
   const [title, setTitle] = useState(bookmark.title)
   const [description, setDescription] = useState(bookmark.description || '')
-  const [tags, setTags] = useState(bookmark.tags.join(', '))
+  const [url, setUrl] = useState(bookmark.url)
+  const [tags, setTags] = useState<string[]>(bookmark.tags || [])
+  const [newTag, setNewTag] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const { toast } = useToast()
-  const { refreshBookmarks, refreshTags } = useBookmarks()
+
+  useEffect(() => {
+    if (open) {
+      setTitle(bookmark.title)
+      setDescription(bookmark.description || '')
+      setUrl(bookmark.url)
+      setTags(bookmark.tags || [])
+    }
+  }, [open, bookmark])
+
+  const handleAddTag = () => {
+    if (newTag.trim() && !tags.includes(newTag.trim())) {
+      setTags([...tags, newTag.trim()])
+      setNewTag('')
+    }
+  }
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,106 +52,113 @@ export function EditBookmarkDialog({ bookmark }: EditBookmarkDialogProps) {
 
     try {
       const response = await fetch(`/api/bookmarks/${bookmark.id}`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          url,
           title,
           description,
-          tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
-        })
+          url,
+          tags,
+        }),
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        if (response.status === 401) {
-          toast({
-            title: 'Authentication Error',
-            description: 'Please sign in to update bookmarks',
-            variant: 'destructive',
-          })
-          return
-        }
-        throw new Error(error.details || 'Failed to update bookmark')
+        throw new Error('Failed to update bookmark')
       }
 
-      toast({
-        title: 'Success',
-        description: 'Bookmark updated successfully',
-      })
-
-      setOpen(false)
-
-      // Refresh both bookmarks and tags
-      await Promise.all([refreshBookmarks(), refreshTags()])
+      onOpenChange(false)
+      onSuccess?.()
+      router.refresh()
     } catch (error) {
       console.error('Error updating bookmark:', error)
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to update bookmark',
-        variant: 'destructive',
-      })
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon">
-          <Pencil className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Edit Bookmark</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="url">URL</Label>
-            <Input
-              id="url"
-              type="url"
-              placeholder="https://example.com"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
+            <label htmlFor="title" className="text-sm font-medium">
+              Title
+            </label>
             <Input
               id="title"
-              placeholder="Enter title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Input
+            <label htmlFor="description" className="text-sm font-medium">
+              Description
+            </label>
+            <Textarea
               id="description"
-              placeholder="Enter description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="tags">Tags (comma separated)</Label>
+            <label htmlFor="url" className="text-sm font-medium">
+              URL
+            </label>
             <Input
-              id="tags"
-              placeholder="tag1, tag2, tag3"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
+              id="url"
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              required
             />
           </div>
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? 'Updating...' : 'Update Bookmark'}
-          </Button>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Tags</label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {tags.map((tag) => (
+                <Badge key={tag} variant="secondary" className="flex items-center gap-1">
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTag(tag)}
+                    className="ml-1 hover:text-destructive"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                placeholder="Add a tag"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleAddTag()
+                  }
+                }}
+              />
+              <Button type="button" onClick={handleAddTag}>
+                Add
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
