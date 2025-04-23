@@ -1,142 +1,78 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { useState, useEffect, useCallback } from 'react'
+import { Bookmark } from '@/types/database'
+import { createClient } from '@/utils/supabase/client'
+import { useToast } from '@/components/ui/use-toast'
 import { Button } from '@/components/ui/button'
 import { BookOpen } from 'lucide-react'
-import { Bookmark } from '@/lib/supabase'
-import { supabase } from '@/lib/supabase'
-import { useToast } from '@/components/ui/use-toast'
 
 export function ReadingList() {
-  const [open, setOpen] = useState(false)
-  const [currentIndex, setCurrentIndex] = useState(0)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
 
+  const fetchBookmarks = useCallback(async () => {
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+
+      const { data, error } = await supabase
+        .from('bookmarks')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setBookmarks(data || [])
+    } catch (error) {
+      console.error('Error fetching bookmarks:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch bookmarks',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
   useEffect(() => {
-    const fetchBookmarks = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) throw new Error('Not authenticated')
-
-        const response = await fetch(`/api/bookmarks?userId=${user.id}`)
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.details || 'Failed to fetch bookmarks')
-        }
-
-        const data = await response.json()
-        setBookmarks(data)
-      } catch (error) {
-        console.error('Error fetching bookmarks:', error)
-        toast({
-          title: 'Error',
-          description: error instanceof Error ? error.message : 'Failed to fetch bookmarks',
-          variant: 'destructive',
-        })
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (open) {
-      fetchBookmarks()
-    }
-  }, [open, toast])
-
-  const currentBookmark = bookmarks[currentIndex]
-
-  const handleNext = () => {
-    if (currentIndex < bookmarks.length - 1) {
-      setCurrentIndex(currentIndex + 1)
-    }
-  }
-
-  const handlePrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1)
-    }
-  }
+    fetchBookmarks()
+  }, [fetchBookmarks])
 
   if (loading) {
     return (
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>
-          <Button variant="outline">
-            <BookOpen className="mr-2 h-4 w-4" />
-            Reading List
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Loading...</DialogTitle>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
+      <div className="flex items-center justify-center h-64">
+        <BookOpen className="h-8 w-8 animate-spin" />
+      </div>
     )
   }
 
   if (bookmarks.length === 0) {
     return (
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>
-          <Button variant="outline">
-            <BookOpen className="mr-2 h-4 w-4" />
-            Reading List
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>No bookmarks found</DialogTitle>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <BookOpen className="h-12 w-12 text-muted-foreground" />
+        <p className="text-muted-foreground">No bookmarks yet</p>
+        <Button variant="outline" onClick={fetchBookmarks}>
+          Refresh
+        </Button>
+      </div>
     )
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline">
-          <BookOpen className="mr-2 h-4 w-4" />
-          Reading List
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-4xl h-[80vh]">
-        <DialogHeader>
-          <DialogTitle>Reading List</DialogTitle>
-        </DialogHeader>
-        <div className="flex-1 w-full h-full flex flex-col">
-          <div className="flex-1 w-full h-full">
-            <iframe
-              src={currentBookmark?.url}
-              className="w-full h-full border-0"
-              title={currentBookmark?.title}
-            />
-          </div>
-          <div className="flex justify-between items-center mt-4">
-            <Button
-              variant="outline"
-              onClick={handlePrevious}
-              disabled={currentIndex === 0}
-            >
-              Previous
-            </Button>
-            <span className="text-sm text-gray-500">
-              {currentIndex + 1} of {bookmarks.length}
-            </span>
-            <Button
-              variant="outline"
-              onClick={handleNext}
-              disabled={currentIndex === bookmarks.length - 1}
-            >
-              Next
-            </Button>
-          </div>
+    <div className="space-y-4">
+      {bookmarks.map((bookmark) => (
+        <div
+          key={bookmark.id}
+          className="p-4 border rounded-lg hover:bg-accent transition-colors"
+        >
+          <h3 className="font-medium">{bookmark.title}</h3>
+          <p className="text-sm text-muted-foreground">{bookmark.url}</p>
         </div>
-      </DialogContent>
-    </Dialog>
+      ))}
+    </div>
   )
 }

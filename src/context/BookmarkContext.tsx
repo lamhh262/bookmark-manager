@@ -1,8 +1,8 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect } from 'react'
-import { Bookmark, Tag } from '@/lib/supabase'
-import { supabase } from '@/lib/supabase'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { Bookmark, Tag } from '@/types/database'
+import { createClient } from '@/utils/supabase/client'
 import { useToast } from '@/components/ui/use-toast'
 
 interface BookmarkContextType {
@@ -22,12 +22,30 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false)
   const { toast } = useToast()
 
-  const fetchBookmarks = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+  useEffect(() => {
+    const supabase = createClient()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setBookmarks([])
+        setTags([])
+        setIsInitialized(false)
+      }
+    })
 
-      const response = await fetch(`/api/bookmarks?userId=${user.id}`)
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  const fetchBookmarks = useCallback(async () => {
+    try {
+      const { data: { user } } = await createClient().auth.getUser()
+      if (!user) {
+        setBookmarks([])
+        return
+      }
+
+      const response = await fetch('/api/bookmarks')
       if (!response.ok) {
         const error = await response.json()
         throw new Error(error.details || 'Failed to fetch bookmarks')
@@ -43,14 +61,17 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
         variant: 'destructive',
       })
     }
-  }
+  }, [toast])
 
-  const fetchTags = async () => {
+  const fetchTags = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      const { data: { user } } = await createClient().auth.getUser()
+      if (!user) {
+        setTags([])
+        return
+      }
 
-      const response = await fetch(`/api/tags?userId=${user.id}`)
+      const response = await fetch('/api/tags')
       if (!response.ok) {
         const error = await response.json()
         throw new Error(error.details || 'Failed to fetch tags')
@@ -66,28 +87,22 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
         variant: 'destructive',
       })
     }
-  }
+  }, [toast])
+
+  const fetchData = useCallback(async () => {
+    if (isInitialized) return
+    setIsLoading(true)
+    try {
+      await Promise.all([fetchBookmarks(), fetchTags()])
+      setIsInitialized(true)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [fetchBookmarks, fetchTags, isInitialized])
 
   useEffect(() => {
-    let mounted = true
-
-    const initialize = async () => {
-      if (isInitialized || !mounted) return
-
-      setIsLoading(true)
-      await Promise.all([fetchBookmarks(), fetchTags()])
-      if (mounted) {
-        setIsLoading(false)
-        setIsInitialized(true)
-      }
-    }
-
-    initialize()
-
-    return () => {
-      mounted = false
-    }
-  }, [isInitialized])
+    fetchData()
+  }, [fetchData])
 
   return (
     <BookmarkContext.Provider value={{

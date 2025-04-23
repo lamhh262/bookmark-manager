@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Pencil } from 'lucide-react'
-import { Bookmark } from '@/lib/supabase'
+import { Bookmark } from '@/types/database'
 import { useToast } from '@/components/ui/use-toast'
 import { useBookmarks } from '@/context/BookmarkContext'
 
@@ -20,11 +20,13 @@ export function EditBookmarkDialog({ bookmark }: EditBookmarkDialogProps) {
   const [title, setTitle] = useState(bookmark.title)
   const [description, setDescription] = useState(bookmark.description || '')
   const [tags, setTags] = useState(bookmark.tags.join(', '))
+  const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
   const { refreshBookmarks, refreshTags } = useBookmarks()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsLoading(true)
 
     try {
       const response = await fetch(`/api/bookmarks/${bookmark.id}`, {
@@ -42,6 +44,14 @@ export function EditBookmarkDialog({ bookmark }: EditBookmarkDialogProps) {
 
       if (!response.ok) {
         const error = await response.json()
+        if (response.status === 401) {
+          toast({
+            title: 'Authentication Error',
+            description: 'Please sign in to update bookmarks',
+            variant: 'destructive',
+          })
+          return
+        }
         throw new Error(error.details || 'Failed to update bookmark')
       }
 
@@ -61,6 +71,8 @@ export function EditBookmarkDialog({ bookmark }: EditBookmarkDialogProps) {
         description: error instanceof Error ? error.message : 'Failed to update bookmark',
         variant: 'destructive',
       })
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -115,8 +127,8 @@ export function EditBookmarkDialog({ bookmark }: EditBookmarkDialogProps) {
               onChange={(e) => setTags(e.target.value)}
             />
           </div>
-          <Button type="submit" className="w-full">
-            Update Bookmark
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? 'Updating...' : 'Update Bookmark'}
           </Button>
         </form>
       </DialogContent>

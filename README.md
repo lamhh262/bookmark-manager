@@ -147,41 +147,6 @@ A simple bookmark manager built with Next.js, Supabase, and shadcn/ui.
        )
      );
 
-   -- profiles table
-   create table profiles (
-     id uuid default uuid_generate_v4() primary key,
-     user_id uuid references auth.users not null unique,
-     full_name text,
-     avatar_url text,
-     created_at timestamp with time zone default timezone('utc'::text, now()) not null
-   );
-
-   -- Enable RLS
-   alter table profiles enable row level security;
-
-   -- Create policies
-   create policy "Users can view their own profile"
-     on profiles for select
-     using (auth.uid() = user_id);
-
-   create policy "Users can update their own profile"
-     on profiles for update
-     using (auth.uid() = user_id);
-
-   -- Create a trigger to create a profile when a new user signs up
-   create function public.handle_new_user()
-   returns trigger as $$
-   begin
-     insert into public.profiles (user_id, full_name, avatar_url)
-     values (new.id, new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'avatar_url');
-     return new;
-   end;
-   $$ language plpgsql security definer;
-
-   create trigger on_auth_user_created
-     after insert on auth.users
-     for each row execute procedure public.handle_new_user();
-
    -- Create indexes for better performance
    create index bookmarks_user_id_idx on bookmarks(user_id);
    create index bookmarks_shared_with_idx on bookmarks(shared_with);
@@ -190,7 +155,6 @@ A simple bookmark manager built with Next.js, Supabase, and shadcn/ui.
    create index tags_name_idx on tags(name);
    create index bookmark_tags_bookmark_id_idx on bookmark_tags(bookmark_id);
    create index bookmark_tags_tag_id_idx on bookmark_tags(tag_id);
-   create index profiles_user_id_idx on profiles(user_id);
    ```
 
 6. Run the development server:

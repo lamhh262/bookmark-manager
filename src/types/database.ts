@@ -1,10 +1,3 @@
-import { createClient } from '@supabase/supabase-js'
-
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
 export interface Bookmark {
   id: string
   user_id: string
@@ -29,12 +22,4 @@ export interface Tag {
 export interface BookmarkTag {
   bookmark_id: string
   tag_id: string
-}
-
-export interface UserProfile {
-  id: string
-  user_id: string
-  full_name: string | null
-  avatar_url: string | null
-  created_at: string
 }

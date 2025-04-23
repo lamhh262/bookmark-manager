@@ -1,37 +1,35 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
-import type { Bookmark } from '@/lib/supabase'
+import { createClient } from '@/utils/supabase/server'
+import type { Bookmark } from '@/types/database'
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = await createClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+    if (userError) throw userError
+    if (!user) {
+      return NextResponse.json({
+        error: 'Not authenticated',
+        details: 'You must be logged in to access bookmarks'
+      }, { status: 401 })
+    }
+
+    const { id } = await params
     const { data, error } = await supabase
       .from('bookmarks')
-      .select(`
-        *,
-        tags:bookmark_tags(
-          tag:tags(
-            id,
-            name
-          )
-        )
-      `)
-      .eq('id', params.id)
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', user.id)
       .single()
 
     if (error) throw error
-
-    // Transform the data to match the expected format
-    const bookmark = {
-      ...data,
-      tags: data.tags.map((t: { tag: { name: string } }) => t.tag.name)
-    }
-
-    return NextResponse.json(bookmark)
+    return NextResponse.json(data)
   } catch (error) {
-    console.error('Error fetching bookmark:', error)
+    console.error('Bookmark fetch error:', error)
     return NextResponse.json({
       error: 'Failed to fetch bookmark',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -41,79 +39,35 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const updates: Partial<Bookmark> & { tags?: string[] } = await request.json()
-    const { tags, ...bookmarkUpdates } = updates
+    const supabase = await createClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-    // Update bookmark data
-    const { data: bookmarkResult, error: bookmarkError } = await supabase
+    if (userError) throw userError
+    if (!user) {
+      return NextResponse.json({
+        error: 'Not authenticated',
+        details: 'You must be logged in to update bookmarks'
+      }, { status: 401 })
+    }
+
+    const bookmark: Partial<Bookmark> = await request.json()
+    const { id } = await params
+
+    const { data, error } = await supabase
       .from('bookmarks')
-      .update(bookmarkUpdates)
-      .eq('id', params.id)
+      .update(bookmark)
+      .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single()
 
-    if (bookmarkError) throw bookmarkError
-
-    if (tags) {
-      // Delete existing bookmark_tags
-      const { error: deleteError } = await supabase
-        .from('bookmark_tags')
-        .delete()
-        .eq('bookmark_id', params.id)
-
-      if (deleteError) throw deleteError
-
-      // Create or get the tags
-      const tagPromises = tags.map(async (tagName) => {
-        const { data: existingTags, error: getTagError } = await supabase
-          .from('tags')
-          .select('*')
-          .eq('user_id', bookmarkResult.user_id)
-          .eq('name', tagName)
-          .single()
-
-        if (getTagError && getTagError.code !== 'PGRST116') {
-          throw getTagError
-        }
-
-        if (existingTags) {
-          return existingTags
-        }
-
-        const { data: newTag, error: createTagError } = await supabase
-          .from('tags')
-          .insert([{ user_id: bookmarkResult.user_id, name: tagName }])
-          .select()
-          .single()
-
-        if (createTagError) throw createTagError
-        return newTag
-      })
-
-      const tagResults = await Promise.all(tagPromises)
-
-      // Create new bookmark_tags relationships
-      const bookmarkTags = tagResults.map(tag => ({
-        bookmark_id: params.id,
-        tag_id: tag.id
-      }))
-
-      const { error: relationError } = await supabase
-        .from('bookmark_tags')
-        .insert(bookmarkTags)
-
-      if (relationError) throw relationError
-    }
-
-    return NextResponse.json({
-      ...bookmarkResult,
-      tags: tags || []
-    })
+    if (error) throw error
+    return NextResponse.json(data)
   } catch (error) {
-    console.error('Error updating bookmark:', error)
+    console.error('Bookmark update error:', error)
     return NextResponse.json({
       error: 'Failed to update bookmark',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -123,19 +77,31 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // The bookmark_tags will be automatically deleted due to ON DELETE CASCADE
+    const supabase = await createClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+    if (userError) throw userError
+    if (!user) {
+      return NextResponse.json({
+        error: 'Not authenticated',
+        details: 'You must be logged in to delete bookmarks'
+      }, { status: 401 })
+    }
+
+    const { id } = await params
     const { error } = await supabase
       .from('bookmarks')
       .delete()
-      .eq('id', params.id)
+      .eq('id', id)
+      .eq('user_id', user.id)
 
     if (error) throw error
-    return NextResponse.json({ message: 'Bookmark deleted successfully' })
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting bookmark:', error)
+    console.error('Bookmark delete error:', error)
     return NextResponse.json({
       error: 'Failed to delete bookmark',
       details: error instanceof Error ? error.message : 'Unknown error'

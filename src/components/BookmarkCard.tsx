@@ -1,6 +1,6 @@
 "use client"
 
-import { Bookmark } from '@/lib/supabase'
+import type { Bookmark } from '@/types/database'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tag, ExternalLink } from 'lucide-react'
@@ -42,7 +42,7 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap gap-2">
-          {bookmark.tags.map((tag) => (
+          {bookmark.tags.map((tag: string) => (
             <button
               key={tag}
               onClick={() => handleTagClick(tag)}

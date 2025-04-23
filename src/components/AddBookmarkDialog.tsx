@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Plus } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/ui/use-toast'
 import { useBookmarks } from '@/context/BookmarkContext'
 
@@ -16,23 +15,21 @@ export function AddBookmarkDialog() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [tags, setTags] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
   const { refreshBookmarks, refreshTags } = useBookmarks()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsLoading(true)
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
       const response = await fetch('/api/bookmarks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_id: user.id,
           url,
           title,
           description,
@@ -43,6 +40,14 @@ export function AddBookmarkDialog() {
 
       if (!response.ok) {
         const error = await response.json()
+        if (response.status === 401) {
+          toast({
+            title: 'Authentication Error',
+            description: 'Please sign in to add bookmarks',
+            variant: 'destructive',
+          })
+          return
+        }
         throw new Error(error.details || 'Failed to add bookmark')
       }
 
@@ -66,6 +71,8 @@ export function AddBookmarkDialog() {
         description: error instanceof Error ? error.message : 'Failed to add bookmark',
         variant: 'destructive',
       })
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -121,8 +128,8 @@ export function AddBookmarkDialog() {
               onChange={(e) => setTags(e.target.value)}
             />
           </div>
-          <Button type="submit" className="w-full">
-            Add Bookmark
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? 'Adding...' : 'Add Bookmark'}
           </Button>
         </form>
       </DialogContent>

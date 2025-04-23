@@ -2,40 +2,23 @@
 
 import { useState, useEffect } from 'react'
 import { User } from '@supabase/supabase-js'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { TagList } from '@/components/TagList'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/utils/supabase/client'
 import { AddBookmarkDialog } from '@/components/AddBookmarkDialog'
 import { BookmarkCard } from '@/components/BookmarkCard'
 import { EmptyState } from '@/components/EmptyState'
 import { useBookmarks } from '@/context/BookmarkContext'
+import { AuthButton } from '@/components/AuthButton'
 
-export default function Home() {
-  const [user, setUser] = useState<User | null>(null)
+function AuthenticatedContent() {
   const { bookmarks, isLoading } = useBookmarks()
-  const router = useRouter()
   const searchParams = useSearchParams()
   const selectedTag = searchParams.get('tag') || ''
-
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-      if (!user) {
-        router.push('/login')
-      }
-    }
-
-    getUser()
-  }, [router])
 
   const filteredBookmarks = selectedTag
     ? bookmarks.filter(bookmark => bookmark.tags?.includes(selectedTag))
     : bookmarks
-
-  if (!user) {
-    return null
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -70,4 +53,39 @@ export default function Home() {
       </div>
     </div>
   )
+}
+
+export default function Home() {
+  const [user, setUser] = useState<User | null>(null)
+
+  useEffect(() => {
+    const supabase = createClient()
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setUser(user)
+    }
+    getUser()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Welcome to Bookmark Manager</h1>
+          <p className="text-gray-600 mb-8">Please sign in to manage your bookmarks</p>
+          <AuthButton />
+        </div>
+      </div>
+    )
+  }
+
+  return <AuthenticatedContent />
 }

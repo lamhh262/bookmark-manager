@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Eye } from 'lucide-react'
-import { Bookmark } from '@/lib/supabase'
+import { Bookmark } from '@/types/database'
 
 interface BookmarkPreviewProps {
   bookmark: Bookmark

@@ -6,9 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Share2 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
 import { useToast } from '@/components/ui/use-toast'
-import { Bookmark } from '@/lib/supabase'
+import type { Bookmark } from '@/types/database'
 
 interface ShareBookmarkProps {
   bookmark: Bookmark
@@ -17,29 +16,37 @@ interface ShareBookmarkProps {
 export function ShareBookmark({ bookmark }: ShareBookmarkProps) {
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
 
   const handleShare = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsLoading(true)
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      const { error } = await supabase
-        .from('bookmarks')
-        .insert({
-          user_id: user.id,
-          url: bookmark.url,
-          title: bookmark.title,
-          description: bookmark.description,
-          tags: bookmark.tags,
+      const response = await fetch(`/api/bookmarks/${bookmark.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           is_public: true,
-          shared_by: bookmark.user_id,
           shared_with: email,
         })
+      })
 
-      if (error) throw error
+      if (!response.ok) {
+        const error = await response.json()
+        if (response.status === 401) {
+          toast({
+            title: 'Authentication Error',
+            description: 'Please sign in to share bookmarks',
+            variant: 'destructive',
+          })
+          return
+        }
+        throw new Error(error.details || 'Failed to share bookmark')
+      }
 
       toast({
         title: 'Success',
@@ -52,9 +59,11 @@ export function ShareBookmark({ bookmark }: ShareBookmarkProps) {
       console.error('Error sharing bookmark:', error)
       toast({
         title: 'Error',
-        description: 'Failed to share bookmark',
+        description: error instanceof Error ? error.message : 'Failed to share bookmark',
         variant: 'destructive',
       })
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -81,8 +90,8 @@ export function ShareBookmark({ bookmark }: ShareBookmarkProps) {
               required
             />
           </div>
-          <Button type="submit" className="w-full">
-            Share
+          <Button type="submit" className="w-full" disabled={isLoading}>
+            {isLoading ? 'Sharing...' : 'Share Bookmark'}
           </Button>
         </form>
       </DialogContent>
