@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { Bookmark, Tag } from '@/types/database'
 import { createClient } from '@/utils/supabase/client'
 import { useToast } from '@/components/ui/use-toast'
@@ -19,7 +19,7 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [tags, setTags] = useState<Tag[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const isInitializedRef = useRef(false)
   const { toast } = useToast()
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
       if (!session?.user) {
         setBookmarks([])
         setTags([])
-        setIsInitialized(false)
+        isInitializedRef.current = false
       }
     })
 
@@ -61,7 +61,7 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
         variant: 'destructive',
       })
     }
-  }, [toast])
+  }, [])
 
   const fetchTags = useCallback(async () => {
     try {
@@ -87,22 +87,21 @@ export function BookmarkProvider({ children }: { children: React.ReactNode }) {
         variant: 'destructive',
       })
     }
-  }, [toast])
-
-  const fetchData = useCallback(async () => {
-    if (isInitialized) return
-    setIsLoading(true)
-    try {
-      await Promise.all([fetchBookmarks(), fetchTags()])
-      setIsInitialized(true)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [fetchBookmarks, fetchTags, isInitialized])
+  }, [])
 
   useEffect(() => {
+    const fetchData = async () => {
+      if (isInitializedRef.current) return
+      setIsLoading(true)
+      try {
+        await Promise.all([fetchBookmarks(), fetchTags()])
+        isInitializedRef.current = true
+      } finally {
+        setIsLoading(false)
+      }
+    }
     fetchData()
-  }, [fetchData])
+  }, [fetchBookmarks, fetchTags])
 
   return (
     <BookmarkContext.Provider value={{
